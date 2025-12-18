@@ -1,11 +1,11 @@
-5b5815e990fa9861c2a88c7c37d3bdb3 *DESCRIPTION
+5b385615c9ae355d9066133f2a6a6a1c *DESCRIPTION
 d72f483978f817964a61fb49951ed25f *LICENSE
 16ca9b65a59629cb3d36b483d8afecd3 *NAMESPACE
-fe424933bcc508bec12e38d233ed2900 *NEWS.md
+b8144c06861185951dc73bebe2c9f151 *NEWS.md
 86ffe9e774c390c6cd4281d9a7fe1548 *R/MAIVE-package.R
 0fcd246c09d9a0944d3d55b05bf2cd64 *R/ar.r
 d2c62b7a09847a55d4fab55e8780645c *R/boot.r
-58f314c532ef8a498eaef06dfd716804 *R/maivefunction.r
+172aa60fd2c94377cb9d56e62dae38cc *R/maivefunction.r
 6ae16730d638abdb14dca77607e416bb *README.md
 76e123f5dcc8dee07678412adc0a2a84 *build/partial.rdb
 474dd5798316128f9b5ca44f66aef1e0 *build/vignette.rds
@@ -27,7 +27,7 @@ b1dcbcd84a4396d06b23760748f7936f *tests/testthat.R
 b1872c10e8ca5f1c0ed1538246e08060 *tests/testthat/test-maive_build_dummy_matrix.R
 a961fbb845325b083e52161c6da0d0bc *tests/testthat/test-maive_confidence_interval.R
 4c999e3db10e48f865c837dcb0e5648d *tests/testthat/test-maive_egger_ci.R
-5aa345e392478bc6ea370ffb0cd695bd *tests/testthat/test-maive_first_stage.R
+32785f1c5b7efe33031b618bf32049aa *tests/testthat/test-maive_first_stage.R
 19276a1fc23da25ebd0ba5b7cd5a1dad *tests/testthat/test-maive_slope_metadata.R
 c1821aaf5db5736ab53f6ffff118d46f *tests/testthat/test-peese-petpeese-outputs.R
 8950b9cbd999c13e51723c9869f28487 *tests/testthat/test-study-weights.R

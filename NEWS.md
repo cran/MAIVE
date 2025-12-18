@@ -1,3 +1,15 @@
+# MAIVE 0.1.11
+
+*Released: 2025-12-18*
+
+## Other Changes
+
+* Disable instrumentation when Ns has no variation; avoid aliased-slope vcov indexing
+* Guard first-stage F-test against rank-deficient vcovCR; add regression test
+
+---
+
+
 # MAIVE 0.1.10
 
 *Released: 2025-12-02*

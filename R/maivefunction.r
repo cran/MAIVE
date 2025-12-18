@@ -47,6 +47,20 @@ maive_validate_inputs <- function(dat, method, weight, instrument, studylevel, S
     AR <- 0L
   }
 
+  # If Ns is constant, the instrument (1/Ns or log(Ns)) has no variation.
+  # That makes the first-stage rank-deficient and also makes the "instrumented"
+  # precision regressor constant, so second-stage slopes can be aliased and
+  # downstream vcov indexing can fail. In this case, IV is not identified, so
+  # disable instrumentation (and AR) up front and fall back to the non-IV fit.
+  if (instrument == 1L) {
+    Ns <- dat[[3]]
+    if (length(unique(Ns)) < 2L) {
+      warning("Ns has no variation; disabling variance instrumentation (instrument=0).")
+      instrument <- 0L
+      AR <- 0L
+    }
+  }
+
   list(
     dat = dat,
     method = method,
@@ -178,7 +192,22 @@ maive_compute_variance_instrumentation <- function(sebs, Ns, g, type_choice, ins
     F_hac <- "NA"
   } else {
     V <- clubSandwich::vcovCR(varreg1, cluster = g, type = type_choice)
-    F_hac <- unname(round(varreg1$coefficients[slope_index]^2 / V[slope_index, slope_index], 3))
+    # In rank-deficient first-stage regressions (e.g., constant Ns so 1/N is
+    # collinear with the intercept), lm() may return aliased coefficients and
+    # vcovCR() may drop them. Guard against out-of-bounds indexing and return NA
+    # for the diagnostic F-test rather than erroring.
+    beta_slope <- varreg1$coefficients[slope_index]
+    has_slope_coef <- length(varreg1$coefficients) >= slope_index &&
+      !is.na(beta_slope) && is.finite(beta_slope)
+    has_slope_vcov <- is.matrix(V) &&
+      nrow(V) >= slope_index && ncol(V) >= slope_index &&
+      !is.na(V[slope_index, slope_index]) && is.finite(V[slope_index, slope_index]) &&
+      V[slope_index, slope_index] > 0
+    if (!has_slope_coef || !has_slope_vcov) {
+      F_hac <- NA_real_
+    } else {
+      F_hac <- unname(round(beta_slope^2 / V[slope_index, slope_index], 3))
+    }
   }
 
   list(
