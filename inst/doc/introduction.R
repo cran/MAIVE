@@ -15,6 +15,28 @@ knitr::opts_chunk$set(
 ## ----setup--------------------------------------------------------------------
 library(MAIVE)
 
+## ----custom-mapping, eval = FALSE---------------------------------------------
+# custom_dat <- data.frame(
+#   my_est = c(0.5, 0.6, 0.4, 0.55),
+#   my_se  = c(0.2, 0.18, 0.25, 0.22),
+#   my_n   = c(80, 120, 95, 110),
+#   my_study = c("A", "A", "B", "C")
+# )
+# 
+# result <- maive(
+#   dat = custom_dat,
+#   estimate = "my_est",
+#   se = "my_se",
+#   n = "my_n",
+#   study_id = "my_study",
+#   method = 3,
+#   weight = 0,
+#   instrument = 1,
+#   studylevel = 2,
+#   SE = 3,
+#   AR = 1
+# )
+
 ## ----example-data-------------------------------------------------------------
 # Simulated meta-analysis data
 set.seed(123)

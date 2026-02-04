@@ -1,82 +1,4 @@
 #' @keywords internal
-maive_validate_inputs <- function(dat, method, weight, instrument, studylevel, SE, AR, first_stage) {
-  dat <- as.data.frame(dat)
-  if (ncol(dat) < 3) {
-    stop("dat must contain at least three columns: bs, sebs, and Ns.")
-  }
-
-  scalar_int <- function(value, name) {
-    if (length(value) != 1L || is.na(value)) {
-      stop(sprintf("%s must be a single non-missing value.", name))
-    }
-    as.integer(value)
-  }
-
-  method <- scalar_int(method, "method")
-  weight <- scalar_int(weight, "weight")
-  instrument <- scalar_int(instrument, "instrument")
-  studylevel <- scalar_int(studylevel, "studylevel")
-  SE <- scalar_int(SE, "SE")
-  AR <- scalar_int(AR, "AR")
-  if (missing(first_stage)) {
-    first_stage <- 0L
-  }
-
-  if (is.character(first_stage)) {
-    match_idx <- match(tolower(first_stage), c("levels", "log"))
-    if (is.na(match_idx)) {
-      stop("first_stage must be one of 'levels' or 'log'.")
-    }
-    first_stage <- match_idx - 1L
-  }
-  first_stage <- scalar_int(first_stage, "first_stage")
-
-  if (!method %in% 1:4) stop("method must be between 1 and 4.")
-  if (!weight %in% 0:3) stop("weight must be 0, 1, 2, or 3.")
-  if (!instrument %in% 0:1) stop("instrument must be 0 or 1.")
-  if (!studylevel %in% 0:3) stop("studylevel must be between 0 and 3.")
-  if (!SE %in% 0:3) stop("SE must be between 0 and 3.")
-  if (!AR %in% 0:1) stop("AR must be 0 or 1.")
-  if (!first_stage %in% 0:1) stop("first_stage must be 0 (levels) or 1 (log).")
-
-  type_map <- c("CR0", "CR1", "CR2")
-  type_choice <- if (SE == 3L) "CR0" else type_map[SE + 1L]
-  first_stage_type <- c("levels", "log")[first_stage + 1L]
-
-  if (method == 4L || weight == 1L || instrument == 0L) {
-    AR <- 0L
-  }
-
-  # If Ns is constant, the instrument (1/Ns or log(Ns)) has no variation.
-  # That makes the first-stage rank-deficient and also makes the "instrumented"
-  # precision regressor constant, so second-stage slopes can be aliased and
-  # downstream vcov indexing can fail. In this case, IV is not identified, so
-  # disable instrumentation (and AR) up front and fall back to the non-IV fit.
-  if (instrument == 1L) {
-    Ns <- dat[[3]]
-    if (length(unique(Ns)) < 2L) {
-      warning("Ns has no variation; disabling variance instrumentation (instrument=0).")
-      instrument <- 0L
-      AR <- 0L
-    }
-  }
-
-  list(
-    dat = dat,
-    method = method,
-    weight = weight,
-    instrument = instrument,
-    studylevel = studylevel,
-    SE = SE,
-    AR = AR,
-    type_choice = type_choice,
-    alpha_s = 0.05,
-    first_stage = first_stage,
-    first_stage_type = first_stage_type
-  )
-}
-
-#' @keywords internal
 maive_build_dummy_matrix <- function(values) {
   f <- factor(values)
   mm <- stats::model.matrix(~ f - 1)
@@ -99,59 +21,6 @@ maive_center_dummy_matrix <- function(values) {
   } else {
     centered[, seq_len(ncol(centered) - 1L), drop = FALSE]
   }
-}
-
-#' @keywords internal
-maive_prepare_data <- function(dat, studylevel) {
-  bs <- dat[[1]]
-  sebs <- dat[[2]]
-  Ns <- dat[[3]]
-
-  if (!is.numeric(bs) || !is.numeric(sebs) || !is.numeric(Ns)) {
-    stop("bs, sebs, and Ns must be numeric.")
-  }
-  if (any(!is.finite(bs)) || any(!is.finite(sebs)) || any(!is.finite(Ns))) {
-    stop("bs, sebs, and Ns must be finite.")
-  }
-  if (any(sebs <= 0)) {
-    stop("sebs must be strictly positive.")
-  }
-  if (any(Ns <= 0)) {
-    stop("Ns must be strictly positive.")
-  }
-
-  M <- length(bs)
-  if (length(sebs) != M || length(Ns) != M) {
-    stop("bs, sebs, and Ns must have the same length.")
-  }
-
-  cluster <- studylevel %/% 2L
-  dummy <- studylevel %% 2L
-
-  if (ncol(dat) >= 4) {
-    studyid <- dat[[4]]
-  } else {
-    studyid <- seq_len(M)
-    dummy <- 0L
-    cluster <- 0L
-  }
-
-  D <- maive_center_dummy_matrix(studyid)
-  g <- if (cluster == 0L) seq_len(M) else studyid
-  dat$g <- g
-
-  list(
-    dat = dat,
-    bs = bs,
-    sebs = sebs,
-    Ns = Ns,
-    M = M,
-    studyid = studyid,
-    dummy = dummy,
-    cluster = cluster,
-    g = g,
-    D = D
-  )
 }
 
 #' @keywords internal
@@ -362,6 +231,19 @@ maive_run_pipeline <- function(opts, prepared, instrumentation, w) {
     adjusted_variance = instrumentation$sebs2fit1
   )
 
+  # Determine instrument strength category
+  instrument_strength <- if (opts$instrument == 0L) {
+    "not_applicable"
+  } else if (!is.numeric(instrumentation$F_hac) || is.na(instrumentation$F_hac)) {
+    "unknown"
+  } else if (instrumentation$F_hac < 1) {
+    "very_weak"
+  } else if (instrumentation$F_hac < 10) {
+    "weak"
+  } else {
+    "strong"
+  }
+
   list(
     "beta" = round(beta, 3),
     "SE" = round(as.numeric(se_ma$se), 3),
@@ -383,7 +265,8 @@ maive_run_pipeline <- function(opts, prepared, instrumentation, w) {
     "petpeese_selected" = petpeese_selected,
     "peese_se2_coef" = peese_se2_coef,
     "peese_se2_se" = peese_se2_se,
-    "weights" = w
+    "weights" = w,
+    "instrument_strength" = instrument_strength
   )
 }
 
@@ -470,6 +353,13 @@ maive_fit_models <- function(design) {
 maive_select_petpeese <- function(fits, design, alpha_s, SE = NULL, data = NULL, type_choice = NULL) {
   M <- length(design$y)
 
+  safe_gt <- function(stat, cutoff) {
+    if (!is.finite(stat) || !is.finite(cutoff)) {
+      return(FALSE)
+    }
+    stat > cutoff
+  }
+
   # Use proper SE method for PET/PEESE selection to respect clustering/bootstrapping
   if (!is.null(SE) && !is.null(data) && !is.null(type_choice)) {
     # Get robust SE for the intercept using the user's chosen method
@@ -480,7 +370,7 @@ maive_select_petpeese <- function(fits, design, alpha_s, SE = NULL, data = NULL,
     quad_stat <- abs(coef(fits$fatpet)[1] / sqrt(vcov(fits$fatpet)[1, 1]))
   }
   quad_cutoff <- qt(1 - alpha_s / 2, M - ncol(design$X))
-  quadratic_decision <- quad_stat > quad_cutoff
+  quadratic_decision <- safe_gt(quad_stat, quad_cutoff)
   petpeese <- if (quadratic_decision) fits$peese else fits$fatpet
 
   # For the standard model (fatpet0), also use proper SE if available
@@ -491,7 +381,7 @@ maive_select_petpeese <- function(fits, design, alpha_s, SE = NULL, data = NULL,
     quad_stat0 <- abs(coef(fits$fatpet0)[1] / sqrt(vcov(fits$fatpet0)[1, 1]))
   }
   quad_cutoff0 <- qt(1 - alpha_s / 2, M - ncol(design$X0))
-  quadratic_decision0 <- quad_stat0 > quad_cutoff0
+  quadratic_decision0 <- safe_gt(quad_stat0, quad_cutoff0)
   petpeese0 <- if (quadratic_decision0) fits$peese0 else fits$fatpet0
 
   list(
@@ -842,10 +732,97 @@ maive_compute_ar_ci <- function(opts, fits, selection, prepared, invNs, type_cho
   )
 }
 
+#' @keywords internal
+maive_analyze <- function(dat,
+                          method,
+                          weight,
+                          instrument,
+                          studylevel,
+                          SE,
+                          AR,
+                          first_stage = 0L,
+                          estimate = NULL,
+                          se = NULL,
+                          n = NULL,
+                          study_id = NULL,
+                          seed = 123,
+                          weight_mode = c("maive", "waive")) {
+  weight_mode <- match.arg(weight_mode)
+  normalize_seed <- function(seed) {
+    if (is.null(seed)) {
+      return(NA_integer_)
+    }
+    if (length(seed) != 1L || is.na(seed) || !is.numeric(seed) || !is.finite(seed)) {
+      cli::cli_abort("Parameter 'seed' must be a single finite numeric value or NULL.", call. = FALSE)
+    }
+    as.integer(seed)
+  }
+
+  old_bootstrap_seed <- getOption("MAIVE.bootstrap.seed", NULL)
+  on.exit(options(MAIVE.bootstrap.seed = old_bootstrap_seed), add = TRUE)
+  options(MAIVE.bootstrap.seed = normalize_seed(seed))
+
+  opts <- normalize_maive_options(
+    dat = dat,
+    method = method,
+    weight = weight,
+    instrument = instrument,
+    studylevel = studylevel,
+    SE = SE,
+    AR = AR,
+    first_stage = first_stage,
+    estimate = estimate,
+    se = se,
+    n = n,
+    study_id = study_id
+  ) # nolint: object_usage_linter.
+  prepared <- maive_prepare_data(opts$dat, opts$studylevel)
+  instrumentation <- maive_compute_variance_instrumentation(
+    prepared$sebs,
+    prepared$Ns,
+    prepared$g,
+    opts$type_choice,
+    opts$instrument,
+    opts$first_stage_type
+  )
+
+  # Check for weak instruments and warn user
+  if (opts$instrument == 1L && is.numeric(instrumentation$F_hac) && !is.na(instrumentation$F_hac)) {
+    if (instrumentation$F_hac < 1) {
+      cli::cli_warn(
+        "Very weak instrument detected (F-test = {instrumentation$F_hac}). Results may be unreliable. Consider using instrument=0 or checking data quality.",
+        call. = FALSE
+      )
+    } else if (instrumentation$F_hac < 10) {
+      cli::cli_warn(
+        "Weak instrument detected (F-test = {instrumentation$F_hac}). Results may be unreliable. Consider using Anderson-Rubin confidence intervals (AR=1).",
+        call. = FALSE
+      )
+    }
+  }
+
+  base_w <- maive_compute_weights(opts$weight, prepared$sebs, instrumentation$sebs2fit1, prepared$studyid)
+
+  if (identical(weight_mode, "waive")) {
+    decay_weights <- maive_compute_waive_weights(instrumentation$first_stage_model)
+    if (opts$weight == 0L) {
+      w <- sqrt(decay_weights)
+    } else {
+      w <- base_w * sqrt(decay_weights)
+    }
+  } else {
+    w <- base_w
+  }
+
+  maive_run_pipeline(opts, prepared, instrumentation, w)
+}
+
 #' R code for MAIVE
 #'
 #' R package for MAIVE: "Spurious Precision in Meta-Analysis of Observational Research" by
 #' Zuzana Irsova, Pedro Bom, Tomas Havranek, Petr Cala, and Heiko Rachinger.
+#'
+#' Guided, interactive workflow available at https://www.easymeta.org.
 #'
 #' @param dat Data frame with columns bs, sebs, Ns, study_id (optional).
 #' @param method 1 FAT-PET, 2 PEESE, 3 PET-PEESE, 4 EK.
@@ -857,6 +834,12 @@ maive_compute_ar_ci <- function(opts, fits, selection, prepared, invNs, type_cho
 #' @param AR Anderson Rubin corrected CI for weak instruments (available for unweighted and MAIVE-adjusted weight versions of
 #' PET, PEESE, PET-PEESE, not available for fixed effects): 0 no, 1 yes.
 #' @param first_stage First-stage specification for the variance model: 0 levels, 1 log.
+#' @param estimate Optional column name to use instead of 'bs'
+#' @param se Optional column name to use instead of 'sebs'
+#' @param n Optional column name to use instead of 'Ns'
+#' @param study_id Optional column name for study identifiers
+#' @param seed Seed for the wild bootstrap when SE = 3. Use NULL to avoid setting a seed
+#'   (results depend on the current RNG state). Default is 123 for historical reproducibility.
 #'
 #' @details Data \code{dat} can be imported from an Excel file via:
 #' \code{dat <- read_excel("inputdata.xlsx")} or from a csv file via: \code{dat <- read.csv("inputdata.csv")}
@@ -905,28 +888,57 @@ maive_compute_ar_ci <- function(opts, fits, selection, prepared, invNs, type_cho
 #' )
 #'
 #' @export
-maive <- function(dat, method, weight, instrument, studylevel, SE, AR, first_stage = 0L) {
-  opts <- maive_validate_inputs(dat, method, weight, instrument, studylevel, SE, AR, first_stage)
-  prepared <- maive_prepare_data(opts$dat, opts$studylevel)
-  instrumentation <- maive_compute_variance_instrumentation(prepared$sebs, prepared$Ns, prepared$g, opts$type_choice, opts$instrument, opts$first_stage_type)
-
-  w <- maive_compute_weights(opts$weight, prepared$sebs, instrumentation$sebs2fit1, prepared$studyid)
-
-  maive_run_pipeline(opts, prepared, instrumentation, w)
+maive <- function(dat,
+                  method,
+                  weight,
+                  instrument,
+                  studylevel,
+                  SE,
+                  AR,
+                  first_stage = 0L,
+                  estimate = NULL,
+                  se = NULL,
+                  n = NULL,
+                  study_id = NULL,
+                  seed = 123) {
+  maive_analyze(
+    dat = dat,
+    method = method,
+    weight = weight,
+    instrument = instrument,
+    studylevel = studylevel,
+    SE = SE,
+    AR = AR,
+    first_stage = first_stage,
+    estimate = estimate,
+    se = se,
+    n = n,
+    study_id = study_id,
+    seed = seed,
+    weight_mode = "maive"
+  )
 }
 
-#' WAIVE: Weighted Adjusted Instrumental Variable Estimator
+#' WAIVE: More Aggressive Correction for P-Hacking and Spurious Precision
 #'
-#' WAIVE extends MAIVE by applying exponential-decay weights that downweight
-#' studies with spurious precision or extreme outlier behavior.
+#' WAIVE (Weighted Adjusted Instrumental Variable Estimator) provides a more
+#' aggressive correction for p-hacking and spurious precision by extending MAIVE
+#' with exponential-decay weights that downweight both spuriously precise
+#' estimates and extreme outliers.
+#'
+#' Guided, interactive workflow available at https://www.easymeta.org.
+#'
+#' For technical details on WAIVE methodology, see: \url{https://meta-analysis.cz/waive_ottawa.pdf}
 #'
 #' @inheritParams maive
 #' @return List with the same structure as \code{maive()}. See \code{?maive} for details.
 #'
 #' @details
-#' Computes robust downweighting based on first-stage residuals. Studies with
-#' negative residuals (spurious precision) or extreme residuals (outliers) receive
-#' reduced influence in the meta-analytic estimate.
+#' WAIVE combines variance instrumentation (as in MAIVE) with robust downweighting
+#' based on first-stage residuals. Studies with negative residuals (spurious
+#' precision) or extreme residuals (outliers) receive exponentially reduced
+#' influence in the meta-analytic estimate. This makes WAIVE more aggressive than
+#' standard MAIVE at correcting for p-hacking and handling outliers.
 #'
 #' @examples
 #' dat <- data.frame(
@@ -940,21 +952,34 @@ maive <- function(dat, method, weight, instrument, studylevel, SE, AR, first_sta
 #'   studylevel = 0, SE = 0, AR = 0, first_stage = 0
 #' )
 #'
-#' @seealso \code{\link{maive}}
 #' @export
-waive <- function(dat, method, weight, instrument, studylevel, SE, AR, first_stage = 0L) {
-  opts <- maive_validate_inputs(dat, method, weight, instrument, studylevel, SE, AR, first_stage)
-  prepared <- maive_prepare_data(opts$dat, opts$studylevel)
-  instrumentation <- maive_compute_variance_instrumentation(prepared$sebs, prepared$Ns, prepared$g, opts$type_choice, opts$instrument, opts$first_stage_type)
-
-  base_w <- maive_compute_weights(opts$weight, prepared$sebs, instrumentation$sebs2fit1, prepared$studyid)
-  decay_weights <- maive_compute_waive_weights(instrumentation$first_stage_model)
-
-  if (opts$weight == 0L) {
-    w <- sqrt(decay_weights)
-  } else {
-    w <- base_w * sqrt(decay_weights)
-  }
-
-  maive_run_pipeline(opts, prepared, instrumentation, w)
+waive <- function(dat,
+                  method,
+                  weight,
+                  instrument,
+                  studylevel,
+                  SE,
+                  AR,
+                  first_stage = 0L,
+                  estimate = NULL,
+                  se = NULL,
+                  n = NULL,
+                  study_id = NULL,
+                  seed = 123) {
+  maive_analyze(
+    dat = dat,
+    method = method,
+    weight = weight,
+    instrument = instrument,
+    studylevel = studylevel,
+    SE = SE,
+    AR = AR,
+    first_stage = first_stage,
+    estimate = estimate,
+    se = se,
+    n = n,
+    study_id = study_id,
+    seed = seed,
+    weight_mode = "waive"
+  )
 }

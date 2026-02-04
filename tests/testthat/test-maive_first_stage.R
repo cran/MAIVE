@@ -72,7 +72,7 @@ test_that("Hausman statistic uses difference-in-estimators variance", {
     first_stage = 0
   )
 
-  opts <- MAIVE:::maive_validate_inputs(dat, 1, 0, 1, 2, 0, 1, 0)
+  opts <- MAIVE:::normalize_maive_options(dat, 1, 0, 1, 2, 0, 1, 0)
   prepared <- MAIVE:::maive_prepare_data(opts$dat, opts$studylevel)
   instrumentation <- MAIVE:::maive_compute_variance_instrumentation(
     prepared$sebs,
@@ -119,7 +119,7 @@ test_that("Hausman PET-PEESE uses MAIVE weights", {
     first_stage = 0
   )
 
-  opts <- MAIVE:::maive_validate_inputs(dat, 3, 2, 1, 0, 0, 0, 0)
+  opts <- MAIVE:::normalize_maive_options(dat, 3, 2, 1, 0, 0, 0, 0)
   prepared <- MAIVE:::maive_prepare_data(opts$dat, opts$studylevel)
   instrumentation <- MAIVE:::maive_compute_variance_instrumentation(
     prepared$sebs,

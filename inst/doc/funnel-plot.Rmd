@@ -1,0 +1,99 @@
+---
+title: "Funnel Plots with MAIVE"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Funnel Plots with MAIVE}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+## Overview
+
+`get_funnel_plot()` draws a base-graphics funnel plot using the original meta-analysis inputs and a fitted MAIVE/WAIVE result. Device management (e.g., `png()`, `svg()`, `pdf()`, base64 encoding) is left to you so you can embed the graphic wherever you need.
+
+For a guided, interactive workflow, visit <https://www.easymeta.org>.
+
+What it shows:
+
+- Confidence-region shading (90/95/99%) built from the simple mean
+- Simple-mean vertical line vs MAIVE/WAIVE fit line (with optional CI)
+- Raw points (effect vs standard error) plus instrumented/adjusted points when available
+- Optional WAIVE point-size scaling reflecting downweighting
+
+## Required inputs
+
+`get_funnel_plot(dat, result, instrument = NULL, model_type = "MAIVE")`
+
+- `dat`: data frame with numeric `bs` (effect sizes) and `sebs` (standard errors, > 0)
+- `result`: list returned by `maive()` or `waive()`
+- `instrument`: optional 0/1 to control whether adjusted SEs/weights are used; if `NULL`, inferred from `result`
+- `model_type`: label for plot text/legend (e.g., `"MAIVE"` or `"WAIVE"`)
+
+## Minimal synthetic example (quick to run)
+
+The code below is set to `eval = FALSE` to keep the vignette fast. Run it interactively to produce the plot.
+
+```{r synth-data, eval = FALSE}
+library(MAIVE)
+
+set.seed(123)
+n <- 40
+dat <- data.frame(
+  bs = rnorm(n, mean = 0.2, sd = 0.25),
+  sebs = runif(n, min = 0.05, max = 0.3),
+  Ns = sample(80:800, n, replace = TRUE),
+  study_id = rep(1:10, each = 4)
+)
+
+# Fit MAIVE (instrumented PET-PEESE, no weights, cluster-robust, wild bootstrap)
+res <- maive(
+  dat = dat,
+  method = 3,
+  weight = 0,
+  instrument = 1,
+  studylevel = 2,
+  SE = 3,
+  AR = 1
+)
+
+# Draw to the current device
+get_funnel_plot(dat = dat, result = res, model_type = "MAIVE")
+```
+
+## Saving to file (PNG example)
+
+Device control is up to you; this pattern works for PNG. Replace `png()` with `svg()`/`pdf()` as needed.
+
+```{r save-png, eval = FALSE}
+png("maive-funnel.png", width = 1800, height = 1400, res = 200)
+get_funnel_plot(dat = dat, result = res, model_type = "MAIVE")
+dev.off()
+```
+
+## Interpreting the plot
+
+- **Shaded cones**: 90/95/99% reference regions centered on the simple mean; darker shading indicates more extreme p-values.
+- **Vertical lines**: dashed at zero, dotted for the simple mean, solid for MAIVE/WAIVE fit (with dashed CI if slope info is available).
+- **Points**: hollow circles for raw effects; filled circles for instrumented/adjusted SEs when `instrument = 1`.
+- **Point size (WAIVE)**: when WAIVE provides weights, adjusted points shrink in proportion to downweighting.
+- **Legend**: shows base points, adjusted points, MAIVE/WAIVE fit, and 95% CI for the fit when present.
+
+## Tips and edge cases
+
+- If `instrument = 0` or the result lacks `SE_instrumented`, the plot omits adjusted points and uses only raw SEs.
+- WAIVE weights are optional; when absent, adjusted points use the default size.
+- Slope metadata is drawn when available (linear/quadratic/kink). If not present, the fit line is omitted.
+- Ensure `dat$sebs` are strictly positive and finite; the helper validates inputs and will stop otherwise.
+- Axis padding and tick formatting are automatic, but you can wrap the call in your own device settings to control size/resolution.
+
+## See also
+
+- `vignette("introduction", package = "MAIVE")` for full estimator workflow
+- Function reference: `?get_funnel_plot`, `?maive`, `?waive`

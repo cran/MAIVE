@@ -4,7 +4,21 @@
 \alias{maive}
 \title{R code for MAIVE}
 \usage{
-maive(dat, method, weight, instrument, studylevel, SE, AR, first_stage = 0L)
+maive(
+  dat,
+  method,
+  weight,
+  instrument,
+  studylevel,
+  SE,
+  AR,
+  first_stage = 0L,
+  estimate = NULL,
+  se = NULL,
+  n = NULL,
+  study_id = NULL,
+  seed = 123
+)
 }
 \arguments{
 \item{dat}{Data frame with columns bs, sebs, Ns, study_id (optional).}
@@ -24,6 +38,17 @@ maive(dat, method, weight, instrument, studylevel, SE, AR, first_stage = 0L)
 PET, PEESE, PET-PEESE, not available for fixed effects): 0 no, 1 yes.}
 
 \item{first_stage}{First-stage specification for the variance model: 0 levels, 1 log.}
+
+\item{estimate}{Optional column name to use instead of 'bs'}
+
+\item{se}{Optional column name to use instead of 'sebs'}
+
+\item{n}{Optional column name to use instead of 'Ns'}
+
+\item{study_id}{Optional column name for study identifiers}
+
+\item{seed}{Seed for the wild bootstrap when SE = 3. Use NULL to avoid setting a seed
+(results depend on the current RNG state). Default is 123 for historical reproducibility.}
 }
 \value{
 \itemize{
@@ -54,6 +79,8 @@ R package for MAIVE: "Spurious Precision in Meta-Analysis of Observational Resea
 Zuzana Irsova, Pedro Bom, Tomas Havranek, Petr Cala, and Heiko Rachinger.
 }
 \details{
+Guided, interactive workflow available at https://www.easymeta.org.
+
 Data \code{dat} can be imported from an Excel file via:
 \code{dat <- read_excel("inputdata.xlsx")} or from a csv file via: \code{dat <- read.csv("inputdata.csv")}
 It should contain:

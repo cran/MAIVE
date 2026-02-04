@@ -6,7 +6,7 @@ test_that("Study weights give each study equal total weight", {
     study_id = c("A", "A", "B", "B", "B", "C")
   )
 
-  opts <- MAIVE:::maive_validate_inputs(dat, method = 1, weight = 3, instrument = 1, studylevel = 2, SE = 0, AR = 0, first_stage = 0)
+  opts <- MAIVE:::normalize_maive_options(dat, method = 1, weight = 3, instrument = 1, studylevel = 2, SE = 0, AR = 0, first_stage = 0)
   prepared <- MAIVE:::maive_prepare_data(opts$dat, opts$studylevel)
   instrumentation <- MAIVE:::maive_compute_variance_instrumentation(
     prepared$sebs,

@@ -175,6 +175,104 @@ test_that("AR CI uses correct instrument based on first_stage", {
   }
 })
 
+test_that("joint AR handles weighted residual scaling (PET) and contains the true parameters", {
+  # Regression test for a subtle bug: under heterogeneous weights, the joint AR
+  # residual must be computed as sqrt(w) * (bs - b0 - b1 * sebs).
+  #
+  # If b0 is subtracted unscaled (as in the unweighted case), the AR acceptance
+  # region can shift away from the fitted intercept and fail to cover it.
+  set.seed(1)
+  n <- 30
+  sebs <- runif(n, 0.05, 0.5)
+  invNs <- runif(n, 0.001, 0.02)
+  weights <- 1 / sebs^2
+
+  b0 <- 1.7
+  b1 <- 0.45
+
+  # Construct an error term orthogonal (under weights) to 1, sebs, and invNs
+  # so that the AR moment conditions hold exactly at (b0, b1).
+  u <- weights
+  s <- weights * sebs
+  v <- weights * invNs
+  E <- cbind(u, s, v)
+  eta <- rnorm(n)
+  coef_proj <- solve(crossprod(E), crossprod(E, eta))
+  e <- as.vector(eta - E %*% coef_proj)
+
+  # Sanity check: weighted orthogonality (numerical tolerance)
+  expect_true(abs(sum(u * e)) < 1e-8)
+  expect_true(abs(sum(s * e)) < 1e-8)
+  expect_true(abs(sum(v * e)) < 1e-8)
+
+  bs <- b0 + b1 * sebs + e
+  model <- lm(bs ~ sebs, weights = weights)
+
+  ar <- suppressWarnings(MAIVE:::compute_AR_CI_optimized(
+    model = model,
+    adjust_fun = MAIVE:::PET_adjust,
+    bs = bs,
+    sebs = sebs,
+    invNs = invNs,
+    g = seq_len(n),
+    type_choice = "CR0",
+    weights = weights,
+    method = "joint"
+  ))
+
+  expect_true(is.numeric(ar$b0_CI))
+  expect_true(is.numeric(ar$b1_CI))
+  expect_true(ar$b0_CI[1] <= b0 && b0 <= ar$b0_CI[2])
+  expect_true(ar$b1_CI[1] <= b1 && b1 <= ar$b1_CI[2])
+})
+
+test_that("joint AR handles weighted residual scaling (PEESE) and contains the true parameters", {
+  # Similar regression test for PEESE: the regressor term is sebs^2 and must be
+  # scaled by sqrt(w), not by w (which would happen if sebs*sqrt(w) is squared).
+  set.seed(3)
+  n <- 40
+  sebs <- runif(n, 0.05, 0.5)
+  invNs <- runif(n, 0.001, 0.02)
+  weights <- exp(runif(n, -6, 6)) # extreme heterogeneity to make the bug obvious
+
+  b0 <- -0.3
+  b1 <- 0.8
+  x <- sebs^2
+
+  # Error orthogonal (under weights) to 1, x, and invNs
+  u <- weights
+  sx <- weights * x
+  v <- weights * invNs
+  E <- cbind(u, sx, v)
+  eta <- rnorm(n)
+  coef_proj <- solve(crossprod(E), crossprod(E, eta))
+  e <- as.vector(eta - E %*% coef_proj)
+
+  expect_true(abs(sum(u * e)) < 1e-8)
+  expect_true(abs(sum(sx * e)) < 1e-8)
+  expect_true(abs(sum(v * e)) < 1e-8)
+
+  bs <- b0 + b1 * x + e
+  model <- lm(bs ~ x, weights = weights)
+
+  ar <- suppressWarnings(MAIVE:::compute_AR_CI_optimized(
+    model = model,
+    adjust_fun = MAIVE:::PEESE_adjust,
+    bs = bs,
+    sebs = sebs,
+    invNs = invNs,
+    g = seq_len(n),
+    type_choice = "CR0",
+    weights = weights,
+    method = "joint"
+  ))
+
+  expect_true(is.numeric(ar$b0_CI))
+  expect_true(is.numeric(ar$b1_CI))
+  expect_true(ar$b0_CI[1] <= b0 && b0 <= ar$b0_CI[2])
+  expect_true(ar$b1_CI[1] <= b1 && b1 <= ar$b1_CI[2])
+})
+
 test_that("Egger AR CI always uses subset method for robust inference", {
   # The egger_ar_ci should always use subset AR method (not joint)
   # This avoids banana-projection artifacts even with strong instruments
@@ -219,7 +317,7 @@ test_that("Egger AR CI always uses subset method for robust inference", {
 
 test_that("instrumentation returns correct instrument_for_ar", {
   # Verify that maive_compute_variance_instrumentation returns the correct
-# instrument based on first_stage_type
+  # instrument based on first_stage_type
   set.seed(555)
   n <- 20
   Ns <- exp(rnorm(n, 7, 1))

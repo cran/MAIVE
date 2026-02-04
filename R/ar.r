@@ -53,11 +53,16 @@ compute_AR_CI_optimized <- function(model, adjust_fun, bs, sebs, invNs, g, type_
     sqrt_weights <- rep(1, M)
   }
 
-  # Transform variables
-  bs_t <- bs * sqrt_weights
-  sebs_t <- sebs * sqrt_weights
-  invNs_t <- invNs * sqrt_weights
+  # Weighted AR uses sqrt-weight scaling:
+  # r(b0,b1) = sqrt(w) * (bs - b0 - b1 * x),
+  # Z_w      = sqrt(w) * [1, instrument]
+  #
+  # NOTE: The intercept must be scaled by sqrt(w) as well; subtracting an
+  # unscaled b0 (as in an unweighted regression) produces incorrect AR regions
+  # under heterogeneous weights.
+  y_t <- bs * sqrt_weights
   ones_vec <- sqrt_weights
+  invNs_t <- invNs * sqrt_weights
 
   # Large dataset check
   if (M > 5000) {
@@ -68,18 +73,34 @@ compute_AR_CI_optimized <- function(model, adjust_fun, bs, sebs, invNs, g, type_
   # Grid resolution based on sample size
   base_resolution <- if (M > 1000) 30 else min(60, max(25, round(sqrt(M))))
 
-  # Pre-compute projection matrices
+  # Instrument matrix (already scaled by sqrt(w))
   Z <- cbind(ones_vec, invNs_t)
-  ZtZ_inv <- tryCatch(solve(t(Z) %*% Z), error = function(e) NULL)
+  ZtZ_inv <- tryCatch(solve(crossprod(Z)), error = function(e) NULL)
   if (is.null(ZtZ_inv)) {
     warning("Instrument matrix is singular; AR CI unavailable.")
     return(list(b0_CI = c(NA_real_, NA_real_), b1_CI = c(NA_real_, NA_real_)))
   }
-  PZ <- Z %*% ZtZ_inv %*% t(Z)
-  MZ <- diag(M) - PZ
 
-  # Pre-compute sebs term for adjustment
-  sebs_term <- if (identical(adjust_fun, PET_adjust)) sebs_t else sebs_t^2
+  # Structural regressor term in original scale, then apply sqrt-weight scaling.
+  # PET uses x = sebs, PEESE uses x = sebs^2.
+  x_raw <- if (identical(adjust_fun, PET_adjust)) sebs else sebs^2
+  x_t <- x_raw * sqrt_weights
+
+  # Precompute cross-products to avoid building MxM projection matrices.
+  # For each candidate (b0, b1):
+  #   r = y_t - b0 * ones_vec - b1 * x_t
+  #   num   = r' P_Z r = (Z'r)' (Z'Z)^{-1} (Z'r)
+  #   denom = r' M_Z r = r'r - num
+  Z_y <- crossprod(Z, y_t)
+  Z_o <- crossprod(Z, ones_vec)
+  Z_x <- crossprod(Z, x_t)
+
+  yy <- sum(y_t^2)
+  oo <- sum(ones_vec^2)
+  xx <- sum(x_t^2)
+  yo <- sum(y_t * ones_vec)
+  yx <- sum(y_t * x_t)
+  ox <- sum(ones_vec * x_t)
 
   # Vectorized AR statistic computation
   compute_AR_stats <- function(b0_vals, b1_vals) {
@@ -89,12 +110,24 @@ compute_AR_CI_optimized <- function(model, adjust_fun, bs, sebs, invNs, g, type_
 
     for (i in seq_len(n_b0)) {
       for (j in seq_len(n_b1)) {
-        bs_star <- bs_t - b0_vals[i] - b1_vals[j] * sebs_term
-        PZ_bs_star <- as.vector(PZ %*% bs_star)
-        MZ_bs_star <- as.vector(MZ %*% bs_star)
-        num <- sum(bs_star * PZ_bs_star)
-        denom <- sum(bs_star * MZ_bs_star)
-        if (abs(denom) > 1e-12) {
+        b0 <- b0_vals[i]
+        b1 <- b1_vals[j]
+
+        # Z'r can be computed from cached cross-products
+        Z_r <- Z_y - b0 * Z_o - b1 * Z_x
+        num <- as.numeric(crossprod(Z_r, ZtZ_inv %*% Z_r))
+
+        # r'r from cached sums (avoids building r explicitly)
+        r2 <- yy +
+          (b0^2) * oo +
+          (b1^2) * xx -
+          2 * b0 * yo -
+          2 * b1 * yx +
+          2 * b0 * b1 * ox
+
+        denom <- r2 - num
+
+        if (is.finite(num) && is.finite(denom) && denom > 1e-12) {
           stats_mat[i, j] <- (M - 2) * num / denom
         }
       }

@@ -2,9 +2,23 @@
 % Please edit documentation in R/maivefunction.r
 \name{waive}
 \alias{waive}
-\title{WAIVE: Weighted Adjusted Instrumental Variable Estimator}
+\title{WAIVE: More Aggressive Correction for P-Hacking and Spurious Precision}
 \usage{
-waive(dat, method, weight, instrument, studylevel, SE, AR, first_stage = 0L)
+waive(
+  dat,
+  method,
+  weight,
+  instrument,
+  studylevel,
+  SE,
+  AR,
+  first_stage = 0L,
+  estimate = NULL,
+  se = NULL,
+  n = NULL,
+  study_id = NULL,
+  seed = 123
+)
 }
 \arguments{
 \item{dat}{Data frame with columns bs, sebs, Ns, study_id (optional).}
@@ -24,18 +38,38 @@ waive(dat, method, weight, instrument, studylevel, SE, AR, first_stage = 0L)
 PET, PEESE, PET-PEESE, not available for fixed effects): 0 no, 1 yes.}
 
 \item{first_stage}{First-stage specification for the variance model: 0 levels, 1 log.}
+
+\item{estimate}{Optional column name to use instead of 'bs'}
+
+\item{se}{Optional column name to use instead of 'sebs'}
+
+\item{n}{Optional column name to use instead of 'Ns'}
+
+\item{study_id}{Optional column name for study identifiers}
+
+\item{seed}{Seed for the wild bootstrap when SE = 3. Use NULL to avoid setting a seed
+(results depend on the current RNG state). Default is 123 for historical reproducibility.}
 }
 \value{
 List with the same structure as \code{maive()}. See \code{?maive} for details.
 }
 \description{
-WAIVE extends MAIVE by applying exponential-decay weights that downweight
-studies with spurious precision or extreme outlier behavior.
+WAIVE (Weighted Adjusted Instrumental Variable Estimator) provides a more
+aggressive correction for p-hacking and spurious precision by extending MAIVE
+with exponential-decay weights that downweight both spuriously precise
+estimates and extreme outliers.
 }
 \details{
-Computes robust downweighting based on first-stage residuals. Studies with
-negative residuals (spurious precision) or extreme residuals (outliers) receive
-reduced influence in the meta-analytic estimate.
+Guided, interactive workflow available at https://www.easymeta.org.
+
+For technical details on WAIVE methodology, see: \url{https://meta-analysis.cz/waive_ottawa.pdf}
+
+
+WAIVE combines variance instrumentation (as in MAIVE) with robust downweighting
+based on first-stage residuals. Studies with negative residuals (spurious
+precision) or extreme residuals (outliers) receive exponentially reduced
+influence in the meta-analytic estimate. This makes WAIVE more aggressive than
+standard MAIVE at correcting for p-hacking and handling outliers.
 }
 \examples{
 dat <- data.frame(
@@ -49,7 +83,4 @@ result <- waive(dat,
   studylevel = 0, SE = 0, AR = 0, first_stage = 0
 )
 
-}
-\seealso{
-\code{\link{maive}}
 }
